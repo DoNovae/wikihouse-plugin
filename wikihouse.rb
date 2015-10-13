@@ -73,7 +73,8 @@ WIKIHOUSE_TEMP = get_temp_directory
 WIKIHOUSE_TITLE = "WikiHouse"
 
 WIKIHOUSE_SCALE = (1.inch).to_mm
-WIKIHOUSE_THICKNESS = 12.mm
+WIKIHOUSE_THICKNESS = 18.mm
+#WIKIHOUSE_THICKNESS = 12.mm
 WIKIHOUSE_FONT_HEIGHT = 30.mm
 WIKIHOUSE_PANEL_PADDING = (25.0.mm / 2.0)
 WIKIHOUSE_SHEET_HEIGHT = 1200.mm
@@ -1868,7 +1869,7 @@ def self.visit_entities(model,group, transform , groups, todo, faces )
 
     # Setup the min/max heights for the depth edge/faces.
     min_height = WikiHouseExtension.settings["sheet_depth"]-1.mm
-    max_height = WikiHouseExtension.settings["sheet_depth"].to_mm+1.mm
+    max_height = WikiHouseExtension.settings["sheet_depth"]+1.mm
 
     # Get the label.
     label="None"
@@ -1911,6 +1912,7 @@ def self.visit_entities(model,group, transform , groups, todo, faces )
         if ignore != 2
           entity.back_material=WikiHouseExtension.back_material if not WikiHouseExtension.back_material.deleted?
           fs << entity
+          #puts "fs: #{fs}\n"
         end
       when "Group", "ComponentInstance"
         # Append the entity to the todo attribute instead of recursively calling
