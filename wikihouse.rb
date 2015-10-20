@@ -899,13 +899,15 @@ class WikiHousePanel
       group_entity = root.add_group
       to_delete << group_entity
       group = group_entity.entities
+      norm=(face.normal).normalize
+      plane = [face.outer_loop.vertices[0].position,norm]
       pts=offset(face.outer_loop)
-      #tface = group.add_face(face.outer_loop.vertices.map {|v| transform * v.position })
+      pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
       tface = group.add_face(pts.map {|v| transform * v })
       face.loops.each do |loop|
         if not loop.outer?
           pts=offset(loop)
-          #hole = group.add_face(loop.vertices.map {|v| transform * v.position })
+          pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
           hole = group.add_face(pts.map {|v| transform * v })
           hole.erase! if hole.valid?
         end
@@ -1256,7 +1258,7 @@ class WikiHousePanel
   # ------------------------------------------------------------------------------
   # offset
   # ------------------------------------------------------------------------------
-  # Code copied from offset.rb
+  # Inspired from offset.rb
   # Copyright 2004,2005,2006,2009 by Rick Wilson - All Rights Reserved
   # ------------------------------------------------------------------------------
   def offset( loop )
@@ -1274,7 +1276,7 @@ class WikiHousePanel
 			 vec2 = (verts[a].position-verts[a-1].position).normalize
 			 next if vec2.parallel?(vec1) 
 			 vec3 = (vec1+vec2).normalize
-			 #puts "vec3: #{vec3}\n"
+			 #puts "vec3: #{vec3}\n"al
 			 if vec3.valid?
 				 ang = vec1.angle_between(vec2)/2
 				 ang = Math::PI/2 if vec1.parallel?(vec2)
@@ -1286,10 +1288,13 @@ class WikiHousePanel
 					 if vec4.valid?
 							 unless (vec2.parallel?(vec4))
 									t = Geom::Transformation.new(vec3.reverse)
+									#puts "vec3b: #{vec3} "
 							 end
 					 end
 				 end
-						pts.push(verts[a].position.transform(t))
+						#puts "vec3: #{vec3} "
+						vert=verts[a].position.transform(t)
+						pts.push(vert.to_a)
 				 else
 						puts "#{a} - vec3 is invalid"
 				 end
@@ -2025,68 +2030,56 @@ def union( model )
     
     @faces.each_pair do |group,faces|
       transform=group.transformation
-      faces.each do |face|
-          #puts "face.normal: #{transform*face.normal}"
-          #puts "dot: #{ref_normal.dot (transform*face.normal).normalize}"
-          if (ref_normal.dot (transform*face.normal).normalize) > 0.5
-            face.loops.each do |loop|       
-              if loop.outer?
-                pts=loop.vertices.map {|v| transform * v.position }
-                pts.each{|v| (v.z+0.05.mm).round(1); (v.x+0.05.mm).round(1);(v.y+0.05.mm).round(1) }
-                #puts "pts: #{pts}"
-                newf=gp_entities.add_face(pts)
-                newf.layer=ly_outer
-                newf.material=WikiHouseExtension.front_material
-                newf.material=@material if not @material.nil?
-                newf.back_material=WikiHouseExtension.back_material
-                ofaces << newf
-              end
-            end #loop
-          end
-       end #faces.each
+       loop0=faces0[0].outer_loop
+       loop0.edges.map{|edge| edge.visible=true}
+       plane = [transform0*loop0.vertices[0].position,ref_normal]
        faces.each do |face|
+          ofaces0=[]
+          ifaces0=[]
           # Select only uper faces
-          if (ref_normal.dot (transform*face.normal).normalize) > 0.5
-            face.loops.each do |loop|       
+          norm=(transform*face.normal).normalize
+          if (ref_normal.dot norm ) > 0.5
+            #loop=face.outer_loop
+            #loop.edges.map{|edge| edge.visible=true}
+            #plane = [transform*loop.vertices[0].position,norm]
+            face.loops.each do |loop|  
               if not loop.outer?
                 pts=loop.vertices.map {|v| transform * v.position }
-                pts.each{|v| (v.z+0.05.mm).round(1); (v.x+0.05.mm).round(1); (v.y+0.05.mm).round(1) }
-                newf=gp_entities.add_face(pts)
-                newf.layer=ly_inner
-                newf.material=WikiHouseExtension.front_material
-                newf.material=@material if not @material.nil?
-                newf.back_material=WikiHouseExtension.back_material
-                ifaces << newf
+                pts=pts.map{|v| [v.x=(v.x).round(4),v.y=(v.y).round(4),v.z=(v.z).round(4)]}
+                pts.uniq!
+                if pts.length > 2
+                  pts<<pts[0]
+                  pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
+                  #puts "pts: #{pts}"
+                  newf=gp_entities.add_face(pts)
+                  newf.layer=ly0
+                  ifaces0 << newf
+                end
               end
             end #loop
-          end
+             loop=face.outer_loop
+             pts=loop.vertices.map {|v| transform * v.position }
+             pts=pts.map{|v| [v.x=(v.x).round(4),v.y=(v.y).round(4),v.z=(v.z).round(4)]}
+             pts.uniq!
+             if pts.length > 2
+               pts<<pts[0]
+               #puts "pts: #{pts}"
+               pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ) }
+               pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
+               newf=gp_entities.add_face(pts)
+               newf.layer=ly0
+               newf.material=WikiHouseExtension.front_material
+               newf.material=@material if not @material.nil?
+               newf.back_material=WikiHouseExtension.back_material
+               ofaces0 << newf
+             end
+          end #if
+          ifaces0.each { |face| face.erase! if not face.deleted?}
+          ofaces.concat(ofaces0)
+          next
        end #faces.each
       end #faces.each_pair
-    
-      # Suppress egdes
-         gp_entities.each do |ent|
-         if ent.typename=='Edge'
-           #puts "---> Nb faces = #{ent.faces.length}"
-           if ent.faces.length > 1
-             faces2=ent.faces.find_all { |face| face != nil and face.layer==ly_inner }
-             if faces2 == nil or faces2.length == 0
-              ent.erase!
-             end
-            end
-         end
-      end
-      
-      #Suppress inner face
-      ifaces.each { |face| face.erase! if not face.deleted?}
-
-      ofaces=[]
-      gp_entities.each do |ent|
-         if ent.typename=='Face' and ent.layer.name == LAYER_OUTER
-             ofaces << ent
-             ent.layer=ly0
-         end
-      end
-      
+     
       # Extrusion
       ofaces.each do |face|
           if not face.deleted?
@@ -2309,7 +2302,6 @@ def position2_a ( face , transform )
                 end
                 position=position.collect { |x| x / loop.vertices.length }
                 #puts "position: #{position}"
-                #return round_a(position)
                 return position
               end
     end #loop
@@ -2377,6 +2369,7 @@ def direction2_a ( ifgp0 , group0 , group )
     else
         faces1234=@faces1234[group]
     end
+    #puts "group: #{group.name}\n"
     #puts "faces1234: #{faces1234}\n"
     transform0=group0.transformation
     transform=group.transformation
@@ -2437,18 +2430,35 @@ end
 # ------------------------------------------------------------------------------
 # pop faces
 # ------------------------------------------------------------------------------
-def pop_faces_notransform( dir_ref )
+def pop_faces( dir_ref )
  keys=@faces.keys
  dir=dir_ref.normalize
+ #puts "dir_ref: #{dir}"
  for idx in 0..keys.length-1
-    faces=@faces.fetch(keys[idx])
+ 	gp=keys[idx]
+ 	transform=gp.transformation
+    faces=@faces.fetch(gp)
+    n=0
+    #puts "gp: #{gp.name}"
     faces.each do | face |
-     if (dir.dot face.normal.normalize) > 0.5
-       puts "dot: #{(dir.dot face.normal.normalize)}"
-       @faces[keys[idx]]=face
-       next
+     normal=transform*face.normal.normalize
+     #puts "normal: #{normal}"
+     if dir.dot(normal) > 0.5
+       n=n+1
+       #puts "dot: #{dir.dot(normal)}"
+       @faces[gp]=face
+       if n==2
+        face.reverse!
+         puts "gp: #{gp.name} - Reverse face: #{face}"
+       end
      end
     end
+    if n==0
+    	face=faces[0]
+    	@faces[gp]=face
+    	face.reverse!
+        puts "gp: #{gp.name} - Reverse face: #{face}"
+    end	
  end
 end
 
@@ -2457,7 +2467,7 @@ end
 # pop faces
 # ------------------------------------------------------------------------------
 def vfaces_build( direction )
-	#puts "direction: #{direction}\n"
+	puts "direction: #{direction}\n"
      @faces.each_pair do |group,face|
         vfaces=Hash.new
         transform=group.transformation
@@ -2480,7 +2490,7 @@ def vfaces_build( direction )
             	         vec=pos.vector_to( pt )
             	         angle=Geom::Vector3d.new(direction).angle_between( line[1] )
             	         #puts "angle: #{angle}\n"
-            	         if (angle - Math::PI/2 ).abs < Math::PI/2/10
+            	         if ((angle - Math::PI/2 ).abs) < (Math::PI/2/4)
             	         	 vec1=Geom::Vector3d.new( pt, transform*edge.vertices[0].position)
             	             vec2=Geom::Vector3d.new( pt, transform*edge.vertices[1].position)
             	             #puts "vec1: #{vec1.length}\n"
@@ -2555,13 +2565,15 @@ def vfaces_direction
     for idx in 0..keys.length-1
       group=keys[idx]
       transform=group.transformation
-      vfaces=@vfaces.fetch(group)
+      vfaces=@vfaces[group]
       face1234=Hash.new
       nb1234=Hash.new
-      #puts "group=#{group}\n"
-      #puts "group=#{group.name}\n"
+      puts "group=#{group}\n"
+      puts "group=#{group.name}\n"
+      puts "vfaces=#{vfaces}\n"
       vfaces.each do |face|
       	  normal=(transform*face.normal).to_a
+      	  puts "normal=#{normal}\n"
       	  if not face1234[normal]
       	    face1234[normal]=position2_a( face , transform )
       	    nb1234[normal]=1
@@ -2583,7 +2595,7 @@ def vfaces_direction
       	  #puts "face1234[#{normal}] #{a_to_mm(face1234[normal])}\n\n"
       end
       @faces1234[group]=face1234
-      #puts "face1234=#{face1234}\n\n"
+      puts "face1234=#{face1234}\n\n"
     end
 end
 
@@ -2618,12 +2630,12 @@ def align( model )
     # Face_ref
     faces_ref=faces0.sort_by { |face| face.area }.reverse
     faces_ref_a=faces_ref.to_a
-    puts "faces_ref_a.aera: #{(faces_ref_a.map{|face| face.area})}"
+    puts "faces_ref_a.aera: #{(faces_ref_a.map{|face| face.area*(1).to_mm*(1).to_mm})}"
     puts "faces_ref_a.normal: #{(faces_ref_a.map{|face| face.normal})}"
     face_ref=faces_ref_a.find { |f| f!=nil }
     puts "face_ref: #{(face_ref)}"
     # Suppress one of the two twin faces
-    pop_faces_notransform( face_ref.normal.to_a )
+    pop_faces( (transform0*face_ref.normal).to_a )
     
     puts "@faces: #{@faces}"
     face0=@faces.fetch(group0)
@@ -2713,7 +2725,8 @@ def align( model )
             pt0=Geom::Point3d.new position["Direction"]["Front"]["Pos"]
             puts "pt0: #{pt0}\n"
             #Performance
-            group.transformation = translation*rot2*rot1*transform
+            group.transformation = rot2*rot1*transform
+            group.transformation = translation*group.transformation
     end
 end
 end
@@ -2838,9 +2851,9 @@ class WikiHouseMetrics
  def metrics( model ) 	
  	data_all=[]
     # Suppress one of the two twin faces
-    pop_faces_notransform( )
+    pop_faces( )
     @faces.each_pair do |group,face|
-        puts "group: #{(group.name)}"
+        #puts "group: #{(group.name)}"
         #puts "face: #{(face.typename)}"
         data=Hash.new
     	data["name"]=group.name
@@ -2859,7 +2872,7 @@ class WikiHouseMetrics
  # ------------------------------------------------------------------------------
 # pop faces
 # ------------------------------------------------------------------------------
-def pop_faces_notransform( )
+def pop_faces( )
  keys=@faces.keys
  for idx in 0..keys.length-1
     faces=@faces.fetch(keys[idx])
@@ -2935,6 +2948,7 @@ def self.load_wikihouse_metrics
   length_tot=0
   # Save the TXT data to the file.
   txt="Name\tSurface(m2)\tVolume(m3)\tLength(m)\n"
+  txt << "--------------------------------------------------------------\n"
   #puts "data_all: #{(data_all)}"
   data_all.each do |data|
       name=data["name"]
@@ -2962,115 +2976,118 @@ def self.load_wikihouse_metrics
 end
 
 # ------------------------------------------------------------------------------
-# Upload Dialog
 # ------------------------------------------------------------------------------
-def self.load_wikihouse_upload
+# CLASS: WikiHouseLabels
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+class WikiHouseLabels
+ def initialize(model , entities )
+     # Initialise the default attribute values.
+    @faces = Hash.new
+    @groups = groups = Hash.new
+    @orphans = orphans = Hash.new
+    @root = model
+    @todo = todo = []
 
-  # Exit if the computer is not online.
-  if not Sketchup.is_online
-    UI.messagebox "You need to be connected to the internet to upload models to #{WIKIHOUSE_TITLE}."
-    return
+    WikiHouseExtension.colors(model)
+
+    # Set a loop counter variable and the default identity transformation.
+    loop = 0
+    transform = Geom::Transformation.new
+    
+    # Aggregate all the entities into the ``todo`` array.
+    entities.each { |entity| todo << [entity, transform] }
+    
+    # Visit all component and group entities defined within the model and count
+    # up all orphaned face entities.
+    while todo.length != 0
+      Sketchup.set_status_text WIKIHOUSE_DETECTION_STATUS[(loop/10) % 5]
+      loop += 1
+      entity, transform = todo.pop
+      case entity.typename
+      when "Group", "ComponentInstance"
+      	@material=entity.material if @material.nil?
+        @name=entity.name if @name.nil?
+        #puts "---> material = #{@material.name}"
+        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces )
+      when "Face"
+        if orphans[WIKIHOUSE_DUMMY_GROUP]
+          orphans[WIKIHOUSE_DUMMY_GROUP] += 1
+        else
+          orphans[WIKIHOUSE_DUMMY_GROUP] = 1
+        end
+      end
+    end
+    
+    # Metrics
+    labels model
+ end
+ 
+# ------------------------------------------------------------------------------
+# labels
+# ------------------------------------------------------------------------------
+ def labels( model )
+ 	list_gps=Hash.new
+    @faces.each_pair do |group,face|
+      layer=group.layer
+      if list_gps[layer].nil?
+      	 list_gps[layer]=1
+      else
+      	  list_gps[layer]=list_gps[layer]+1
+      end
+      id=list_gps[layer]
+      group.name=layer.name+"_#{id}"
+      puts "group.name: #{group.name}"
+    end
+ end
+end
+# ------------------------------------------------------------------------------
+# wikihouse_labels
+# ------------------------------------------------------------------------------
+def self.wikihouse_labels ( model , interactive )
+  entities = model.active_entities
+  selection = model.selection
+  if selection.empty?
+    if interactive
+      reply = UI.messagebox "No objects selected. Export the entire model?", MB_OKCANCEL
+      if reply != REPLY_OK
+        return
+      end
+    end
+  else
+    entities = selection
   end
+  WikiHouseLabels.new model , entities
+end
 
+
+# ------------------------------------------------------------------------------
+# load_wikihouse_labels
+# ------------------------------------------------------------------------------
+def self.load_wikihouse_labels
   model = Sketchup.active_model
 
   # Exit if a model wasn't available.
   if not model
-    show_wikihouse_error "You need to open a SketchUp model to share"
+    show_wikihouse_error "You need to open a SketchUp model before it can be fabricated"
     return
   end
 
   # Initialise an attribute dictionary for custom metadata.
   attr = model.attribute_dictionary WIKIHOUSE_TITLE, true
   if attr.size == 0
-    attr["spec"] = "0.1"
+    attr["spec"] = WIKIHOUSE_SPEC
   end
 
   # Exit if it's an unsaved model.
   model_path = model.path
   if model_path == ""
-    UI.messagebox "You need to save the model before it can be shared at #{WIKIHOUSE_TITLE}"
+    UI.messagebox "You need to save the model before the cutting sheets can be generated"
     return
   end
-
-  # Auto-save the model if it has been modified.
-  if model.modified?
-    if not model.save model_path
-      show_wikihouse_error "Couldn't auto-save the model to #{model_path}"
-      return
-    end
-  end
-
-  # Try and infer the model's name.
-  model_name = model.name
-  if model_name == ""
-    model_name = model.title
-  end
-
-  # Instantiate an upload web dialog.
-  dialog = UI::WebDialog.new WIKIHOUSE_TITLE, true, "#{WIKIHOUSE_TITLE}-Upload", 480, 640, 150, 150, true
-
-  # Load default values into the upload form.
-  dialog.add_action_callback "load" do |dialog, params|
-    if model_name != ""
-      if dialog.get_element_value("design-title") == ""
-        set_dom_value dialog, "design-title", model_name
-      end
-    end
-    if model.description != ""
-      if dialog.get_element_value("design-description") == ""
-        set_dom_value dialog, "design-description", model.description
-      end
-    end
-    if Sketchup.version
-      set_dom_value dialog, "design-sketchup-version", Sketchup.version
-    end
-    set_dom_value dialog, "design-plugin-version", WIKIHOUSE_PLUGIN_VERSION
-  end
-
-  # Process and prepare the model related data for upload.
-  dialog.add_action_callback "process" do |dialog, params|
-    wikihouse_process_upload dialog, model, model_path
-  end
-
-  dialog.add_action_callback "uploaded" do |dialog, params|
-    if WIKIHOUSE_UPLOADS.key? dialog
-      WIKIHOUSE_UPLOADS.delete dialog
-    end
-    if params == "success"
-      UI.messagebox "Successfully uploaded #{model_name}"
-    else
-      UI.messagebox "Upload to #{WIKIHOUSE_TITLE} failed. Please try again."
-    end
-  end
-
-  dialog.add_action_callback "download" do |dialog, params|
-    wikihouse_download_callback dialog, params
-  end
-
-  dialog.add_action_callback "save" do |dialog, download_id|
-    wikihouse_save_callback dialog, download_id
-  end
-
-  dialog.add_action_callback "error" do |dialog, download_id|
-    wikihouse_error_callback dialog, download_id
-  end
-
-  # TODO(tav): There can be a situation where the dialog has been closed, but
-  # the upload succeeds and the dialog gets called with "uploaded" and brought
-  # to front.
-  dialog.set_on_close do
-    dialog.set_url "about:blank"
-    if WIKIHOUSE_UPLOADS.key? dialog
-      show_wikihouse_error "Upload to #{WIKIHOUSE_TITLE} has been aborted"
-      WIKIHOUSE_UPLOADS.delete dialog
-    end
-  end
-
-  dialog.set_url WIKIHOUSE_UPLOAD_URL
-  dialog.show
-  dialog.show_modal
-
+  
+  # Labels
+  wikihouse_labels model ,true
 end
 
 
@@ -3155,6 +3172,24 @@ if not file_loaded? __FILE__
   }
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# Labels
+# ------------------------------------------------------------------------------
+   WIKIHOUSE_LABELS = UI::Command.new "Labels..." do
+    load_wikihouse_labels
+  end
+  
+  WIKIHOUSE_LABELS.tooltip = "Labels"
+  WIKIHOUSE_LABELS.small_icon = File.join WIKIHOUSE_DIR, "labels-16.png"
+  WIKIHOUSE_LABELS.large_icon = File.join WIKIHOUSE_DIR, "labels.png"
+  WIKIHOUSE_LABELS.set_validation_proc {
+    if Sketchup.active_model
+      MF_ENABLED
+    else
+      MF_DISABLED|MF_GRAYED
+    end
+  }
+# ------------------------------------------------------------------------------
 
   WIKIHOUSE_SETTINGS = UI::Command.new 'Settings...' do
       load_wikihouse_settings
@@ -3173,6 +3208,7 @@ if not file_loaded? __FILE__
   WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_UNION
   WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_ALIGN
   WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_METRICS
+  WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_LABELS
   WIKIHOUSE_TOOLBAR.add_item(WIKIHOUSE_SETTINGS)
   WIKIHOUSE_TOOLBAR.show
 
@@ -3182,6 +3218,7 @@ if not file_loaded? __FILE__
   WIKIHOUSE_MENU.add_item WIKIHOUSE_UNION
   WIKIHOUSE_MENU.add_item WIKIHOUSE_ALIGN
   WIKIHOUSE_MENU.add_item WIKIHOUSE_METRICS
+  WIKIHOUSE_MENU.add_item WIKIHOUSE_LABELS
   WIKIHOUSE_MENU.add_item(WIKIHOUSE_SETTINGS)
 
   # Add our custom AppObserver.
