@@ -502,7 +502,7 @@ class WikiHouseSVG
 end
 
 # ------------------------------------------------------------------------------
-# Layout Engine
+# Layout Engine "
 # ------------------------------------------------------------------------------
 
 class WikiHouseLayoutEngine
@@ -689,7 +689,7 @@ class WikiHouseLayoutEngine
                   if angle
                     transform = transform * Geom::Transformation.rotation(origin, Z_AXIS, angle)
                   end
-                  # Check every point to see if it's within the available region.
+                  # Check every point to see if it s within the available region.
                   all_match = true
                   inner.each do |point|
                     point = transform * point
@@ -1866,7 +1866,7 @@ end
 # ------------------------------------------------------------------------------
 # visit_entities
 # ------------------------------------------------------------------------------
-def self.visit_entities(model,group, transform , groups, todo, faces )
+def self.visit_entities(model,group, transform , groups, todo, faces , pathes , unique )
     # Setup some local variables.
     exists = false
     fs = []
@@ -1887,12 +1887,15 @@ def self.visit_entities(model,group, transform , groups, todo, faces )
     case group.typename
      when "Group"
       entities = group.entities
+      label = group.name if not group.name.nil?
      else #Component
+      group=group.make_unique if unique
       entities = group.definition.entities
+      label = group.name if not group.name.nil?
     end
 
     # Add the new group/component definition.
-    label = group.name if not group.name.nil?
+    pathes[group]=label if pathes[group].nil?
     groups[group] = [[transform, label]]
 
     # Loop through the entities.
@@ -1919,10 +1922,16 @@ def self.visit_entities(model,group, transform , groups, todo, faces )
           fs << entity
           #puts "fs: #{fs}\n"
         end
-      when "Group", "ComponentInstance"
+      when "Group"
         # Append the entity to the todo attribute instead of recursively calling
         # ``visit`` so as to avoid blowing the stack.
         todo << [entity, transform]
+        pathes[entity]=pathes[group]+"\\"+entity.name
+      when "ComponentInstance"
+        # Append the entity to the todo attribute instead of recursively calling
+        # ``visit`` so as to avoid blowing the stack.
+        todo << [entity, transform]
+        pathes[entity]=pathes[group]+"\\"+entity.name
       end
     end
   
@@ -1944,6 +1953,7 @@ class WikiHouseUnion
      # Initialise the default attribute values.
     @faces = Hash.new
     @groups = groups = Hash.new
+    @pathes = Hash.new
     @orphans = orphans = Hash.new
     @root = model
     @to_delete = []
@@ -1975,7 +1985,7 @@ class WikiHouseUnion
       	@material=entity.material if @material.nil?
         @name=entity.name if @name.nil?
         #puts "---> material = #{@material.name}"
-        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces )
+        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces , @pathes , false )
       when "Face"
         if orphans[WIKIHOUSE_DUMMY_GROUP]
           orphans[WIKIHOUSE_DUMMY_GROUP] += 1
@@ -2027,12 +2037,15 @@ def union( model )
     transform0=group0.transformation
     ref_normal=(transform0*face_ref.normal).normalize
     puts "ref_normal: #{ref_normal}"
+    loop0=faces0[0].outer_loop
+    loop0.edges.map{|edge| edge.visible=true}
+    plane = [transform0*loop0.vertices[0].position,ref_normal]
     
     @faces.each_pair do |group,faces|
       transform=group.transformation
-       loop0=faces0[0].outer_loop
-       loop0.edges.map{|edge| edge.visible=true}
-       plane = [transform0*loop0.vertices[0].position,ref_normal]
+       #loop0=faces0[0].outer_loop
+       #loop0.edges.map{|edge| edge.visible=true}
+       #plane = [transform0*loop0.vertices[0].position,ref_normal]
        faces.each do |face|
           ofaces0=[]
           ifaces0=[]
@@ -2083,6 +2096,8 @@ def union( model )
       # Extrusion
       ofaces.each do |face|
           if not face.deleted?
+               norm=(face.normal).normalize
+               face.reverse! if  ref_normal.dot(norm )< 0 
       	       face.pushpull( WikiHouseExtension.settings["sheet_depth"] , false )
       	  end
       end
@@ -2232,6 +2247,7 @@ def initialize(model , entities )
     @NORMAL=1
     @DIRECTION=2
     @faces = Hash.new
+    @pathes = Hash.new
     @groups = groups = Hash.new
     @orphans = orphans = Hash.new
     @root = model
@@ -2265,7 +2281,7 @@ def initialize(model , entities )
       when "Group", "ComponentInstance"
         @material=entity.material if @material.nil?
         @name=entity.name if @name.nil?
-        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces )
+        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces , @pathes, false )
          #puts "---> material = #{material.name}"
       when "Face"
         if orphans[WIKIHOUSE_DUMMY_GROUP]
@@ -2806,6 +2822,7 @@ class WikiHouseMetrics
      # Initialise the default attribute values.
     @faces = Hash.new
     @groups = groups = Hash.new
+    @pathes = Hash.new
     @orphans = orphans = Hash.new
     @root = model
     @todo = todo = []
@@ -2831,7 +2848,7 @@ class WikiHouseMetrics
       	@material=entity.material if @material.nil?
         @name=entity.name if @name.nil?
         #puts "---> material = #{@material.name}"
-        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces )
+        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces , @pathes, false )
       when "Face"
         if orphans[WIKIHOUSE_DUMMY_GROUP]
           orphans[WIKIHOUSE_DUMMY_GROUP] += 1
@@ -2863,11 +2880,13 @@ class WikiHouseMetrics
     	len=0
     	face.outer_loop.edgeuses.each  {|edgeuse|  len = len + edgeuse.edge.length }
     	data["length"]=((len/1000).to_mm).round(1)
+    	data["path"]=@pathes[group]
     	#puts "data: #{(data)}"
     	data_all << data
     end
     return data_all
  end
+ 
  
  # ------------------------------------------------------------------------------
 # pop faces
@@ -2947,7 +2966,7 @@ def self.load_wikihouse_metrics
   volume_tot=0
   length_tot=0
   # Save the TXT data to the file.
-  txt="Name\tSurface(m2)\tVolume(m3)\tLength(m)\n"
+  txt="Name\tSurface(m2)\tVolume(m3)\tLength(m)\tPath\n"
   txt << "--------------------------------------------------------------\n"
   #puts "data_all: #{(data_all)}"
   data_all.each do |data|
@@ -2955,10 +2974,11 @@ def self.load_wikihouse_metrics
       surface=data["surface"]
       volume=data["volume"]
       length=data["length"]
+      path=data["path"]
       surface_tot = surface_tot +surface
       volume_tot = volume_tot + volume
       length_tot = length_tot + length
-      txt << "#{name}\t#{surface}\t#{volume}\t#{length}\n"
+      txt << "#{name}\t#{surface}\t#{volume}\t#{length}\t#{path}\n"
   end
   txt << "--------------------------------------------------------------\n"
   txt << "TOTALS\t#{surface_tot.round(2)}\t#{volume_tot.round(3)}\t#{length_tot.round(1)}\n"
@@ -2975,6 +2995,8 @@ def self.load_wikihouse_metrics
   end
 end
 
+
+
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 # CLASS: WikiHouseLabels
@@ -2984,6 +3006,7 @@ class WikiHouseLabels
  def initialize(model , entities )
      # Initialise the default attribute values.
     @faces = Hash.new
+     @pathes = Hash.new
     @groups = groups = Hash.new
     @orphans = orphans = Hash.new
     @root = model
@@ -3009,7 +3032,7 @@ class WikiHouseLabels
       	@material=entity.material if @material.nil?
         @name=entity.name if @name.nil?
         #puts "---> material = #{@material.name}"
-        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces )
+        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces, @pathes, false )
       when "Face"
         if orphans[WIKIHOUSE_DUMMY_GROUP]
           orphans[WIKIHOUSE_DUMMY_GROUP] += 1
@@ -3019,7 +3042,7 @@ class WikiHouseLabels
       end
     end
     
-    # Metrics
+    # Labels
     labels model
  end
  
@@ -3036,11 +3059,18 @@ class WikiHouseLabels
       	  list_gps[layer]=list_gps[layer]+1
       end
       id=list_gps[layer]
-      group.name=layer.name+"_#{id}"
+      len=layer.name.length
+      if len > 6
+        group.name=layer.name[0...3]+layer.name[len-3...len]+"##{id}"
+      else
+        group.name=layer.name+"##{id}"
+      end
       puts "group.name: #{group.name}"
     end
  end
-end
+end #class
+
+
 # ------------------------------------------------------------------------------
 # wikihouse_labels
 # ------------------------------------------------------------------------------
@@ -3090,6 +3120,192 @@ def self.load_wikihouse_labels
   wikihouse_labels model ,true
 end
 
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# CLASS: WikiHouseUnique
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+class WikiHouseUnique
+ def initialize(model , entities )
+     # Initialise the default attribute values.
+    @faces = Hash.new
+     @pathes = Hash.new
+    @groups = groups = Hash.new
+    @orphans = orphans = Hash.new
+    @root = model
+    @todo = todo = []
+
+    WikiHouseExtension.colors(model)
+
+    # Set a loop counter variable and the default identity transformation.
+    loop = 0
+    transform = Geom::Transformation.new
+    
+    # Aggregate all the entities into the ``todo`` array.
+    entities.each { |entity| todo << [entity, transform] }
+    
+    # Visit all component and group entities defined within the model and count
+    # up all orphaned face entities.
+    while todo.length != 0
+      Sketchup.set_status_text WIKIHOUSE_DETECTION_STATUS[(loop/10) % 5]
+      loop += 1
+      entity, transform = todo.pop
+      case entity.typename
+      when "Group", "ComponentInstance"
+      	@material=entity.material if @material.nil?
+        @name=entity.name if @name.nil?
+        #puts "---> material = #{@material.name}"
+        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces, @pathes, true )
+      when "Face"
+        if orphans[WIKIHOUSE_DUMMY_GROUP]
+          orphans[WIKIHOUSE_DUMMY_GROUP] += 1
+        else
+          orphans[WIKIHOUSE_DUMMY_GROUP] = 1
+        end
+      end
+    end
+    
+    # Unique
+    unique model
+ end
+ 
+# ------------------------------------------------------------------------------
+# unique
+# ------------------------------------------------------------------------------
+ def unique( model )
+    @faces.each_pair do |group,face|
+      if group.typename == "ComponentInstance"
+          puts "Unique: #{@pathes[group]}\n"
+          puts "Component: #{group.definition.name}\n"
+          puts "Name: #{group.name}\n"
+          group.make_unique
+      end
+    end
+ end
+end #class
+
+
+# ------------------------------------------------------------------------------
+# wikihouse_unique
+# ------------------------------------------------------------------------------
+def self.wikihouse_unique ( model , interactive )
+  entities = model.active_entities
+  selection = model.selection
+  if selection.empty?
+    if interactive
+      reply = UI.messagebox "No objects selected. Export the entire model?", MB_OKCANCEL
+      if reply != REPLY_OK
+        return
+      end
+    end
+  else
+    entities = selection
+  end
+  reply = UI.messagebox "ATTENTION: all components will be unique ?", MB_OKCANCEL
+  if reply != REPLY_OK
+        return
+  end
+  WikiHouseUnique.new model , entities
+end
+
+
+# ------------------------------------------------------------------------------
+# load_wikihouse_unique
+# ------------------------------------------------------------------------------
+def self.load_wikihouse_unique
+  model = Sketchup.active_model
+
+  # Exit if a model wasn't available.
+  if not model
+    show_wikihouse_error "You need to open a SketchUp model before it can be fabricated"
+    return
+  end
+
+  # Initialise an attribute dictionary for custom metadata.
+  attr = model.attribute_dictionary WIKIHOUSE_TITLE, true
+  if attr.size == 0
+    attr["spec"] = WIKIHOUSE_SPEC
+  end
+
+  # Exit if it's an unsaved model.
+  model_path = model.path
+  if model_path == ""
+    UI.messagebox "You need to save the model before the cutting sheets can be generated"
+    return
+  end
+  
+  # Labels
+  wikihouse_unique model ,true
+end
+
+
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Select
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+def self.Select( name )
+     # Initialise the default attribute values.
+     model = Sketchup.active_model
+    entities = model.active_entities
+    selection = model.selection
+    if selection.empty?
+      reply = UI.messagebox "No objects selected. Export the entire model?", MB_OKCANCEL
+      if reply != REPLY_OK
+        return
+      end
+    else
+      entities = selection
+    end
+    @faces = Hash.new
+     @pathes = Hash.new
+    @groups = groups = Hash.new
+    @orphans = orphans = Hash.new
+    @root = model
+    @todo = todo = []
+
+    WikiHouseExtension.colors(model)
+
+    # Set a loop counter variable and the default identity transformation.
+    loop = 0
+    transform = Geom::Transformation.new
+    
+    # Aggregate all the entities into the ``todo`` array.
+    entities.each { |entity| todo << [entity, transform] }
+    
+    # Visit all component and group entities defined within the model and count
+    # up all orphaned face entities.
+    while todo.length != 0
+      Sketchup.set_status_text WIKIHOUSE_DETECTION_STATUS[(loop/10) % 5]
+      loop += 1
+      entity, transform = todo.pop
+      case entity.typename
+      when "Group", "ComponentInstance"
+      	@material=entity.material if @material.nil?
+        @name=entity.name if @name.nil?
+        #puts "---> material = #{@material.name}"
+        WikiHouseExtension.visit_entities(model, entity, transform, @groups, @todo, @faces, @pathes , false )
+      when "Face"
+        if orphans[WIKIHOUSE_DUMMY_GROUP]
+          orphans[WIKIHOUSE_DUMMY_GROUP] += 1
+        else
+          orphans[WIKIHOUSE_DUMMY_GROUP] = 1
+        end
+      end
+    end
+    
+    # Select
+    model.selection.clear
+    @faces.each_pair do |group,face|
+      layer=group.layer
+      if ( not group.name.nil? ) and ( group.name == name )
+        puts "Layer: #{group.layer.name} - #{@pathes[group]}\n"
+        group.visible=true
+        model.selection.add group
+      end                       
+    end
+    return
+end
 
 # ------------------------------------------------------------------------------
 # Set Globals
@@ -3191,6 +3407,27 @@ if not file_loaded? __FILE__
   }
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# Unique
+# ------------------------------------------------------------------------------
+   WIKIHOUSE_UNIQUE = UI::Command.new "Unique..." do
+    load_wikihouse_unique
+  end
+  
+  WIKIHOUSE_UNIQUE.tooltip = "Unique"
+  WIKIHOUSE_UNIQUE.small_icon = File.join WIKIHOUSE_DIR, "unique-16.png"
+  WIKIHOUSE_UNIQUE.large_icon = File.join WIKIHOUSE_DIR, "unique.png"
+  WIKIHOUSE_UNIQUE.set_validation_proc {
+    if Sketchup.active_model
+      MF_ENABLED
+    else
+      MF_DISABLED|MF_GRAYED
+    end
+  }
+  
+# ------------------------------------------------------------------------------
+
+
   WIKIHOUSE_SETTINGS = UI::Command.new 'Settings...' do
       load_wikihouse_settings
   end
@@ -3209,6 +3446,7 @@ if not file_loaded? __FILE__
   WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_ALIGN
   WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_METRICS
   WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_LABELS
+  WIKIHOUSE_TOOLBAR.add_item WIKIHOUSE_UNIQUE
   WIKIHOUSE_TOOLBAR.add_item(WIKIHOUSE_SETTINGS)
   WIKIHOUSE_TOOLBAR.show
 
@@ -3219,6 +3457,7 @@ if not file_loaded? __FILE__
   WIKIHOUSE_MENU.add_item WIKIHOUSE_ALIGN
   WIKIHOUSE_MENU.add_item WIKIHOUSE_METRICS
   WIKIHOUSE_MENU.add_item WIKIHOUSE_LABELS
+  WIKIHOUSE_MENU.add_item WIKIHOUSE_UNIQUE
   WIKIHOUSE_MENU.add_item(WIKIHOUSE_SETTINGS)
 
   # Add our custom AppObserver.
