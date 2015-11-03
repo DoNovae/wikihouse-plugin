@@ -29,6 +29,7 @@ function recieve_wikihouse_settings(args) {
 	  "margin"              => wikihouse_sheet_margin,
 	  "font_height"         => wikihouse_font_height,
 	  "drill_width"         => wikihouse_drill_width,
+	  "scale"               => wikihouse_scale,
 	  }
 	  */
 
@@ -41,6 +42,7 @@ function recieve_wikihouse_settings(args) {
 	  document.getElementById("padding").value = Math.round(settings.padding*10)/10;
 	  document.getElementById("font_height").value = Math.round(settings.font_height*10)/10;
 	  document.getElementById("drill_width").value = Math.round(settings.drill_width*10)/10;
+	  document.getElementById("scale").value = Math.round(settings.scale*10000)/10000;
 	}
 
 // Update Settings 
@@ -48,7 +50,7 @@ function send_wikihouse_settings(mode) {
   
 	
   var fields = new Array("sheet_height", "sheet_width", "sheet_depth", 
-		  "margin", "padding", "font_height" , "drill_width");
+		  "margin", "padding", "font_height" , "drill_width" , "scale");
   
   var idx, value, args;  
 

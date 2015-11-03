@@ -81,6 +81,7 @@ WIKIHOUSE_SHEET_HEIGHT = 1200.mm
 WIKIHOUSE_SHEET_MARGIN = 15.0.mm - WIKIHOUSE_PANEL_PADDING
 WIKIHOUSE_SHEET_WIDTH = 2400.mm
 WIKIHOUSE_DRILL_WIDTH = 3.mm
+WIKIHOUSE_LAYOUT_SCALE = 1
 
 WIKIHOUSE_SHEET_INNER_HEIGHT = WIKIHOUSE_SHEET_HEIGHT - (2 * WIKIHOUSE_SHEET_MARGIN)
 WIKIHOUSE_SHEET_INNER_WIDTH = WIKIHOUSE_SHEET_WIDTH - (2 * WIKIHOUSE_SHEET_MARGIN)
@@ -99,6 +100,7 @@ WIKIHOUSE_SHEET_INNER_WIDTH = WIKIHOUSE_SHEET_WIDTH - (2 * WIKIHOUSE_SHEET_MARGI
   wikihouse_sheet_inner_height = WIKIHOUSE_SHEET_INNER_HEIGHT
   wikihouse_sheet_inner_width  = WIKIHOUSE_SHEET_INNER_WIDTH
   wikihouse_drill_width = WIKIHOUSE_DRILL_WIDTH
+  wikihouse_scale = WIKIHOUSE_LAYOUT_SCALE
   # Store the actual values as length objects (in inches)
   @settings = {
     'sheet_height'       => wikihouse_sheet_height.to_inch,
@@ -110,6 +112,7 @@ WIKIHOUSE_SHEET_INNER_WIDTH = WIKIHOUSE_SHEET_WIDTH - (2 * WIKIHOUSE_SHEET_MARGI
     'margin'             => wikihouse_sheet_margin.to_inch,
     'font_height'        => wikihouse_font_height.to_inch,
     'drill_width'        => wikihouse_drill_width.to_inch,
+    'scale'              => wikihouse_scale,
   }
 
 
@@ -123,8 +126,7 @@ WIKIHOUSE_SHEET_INNER_WIDTH = WIKIHOUSE_SHEET_WIDTH - (2 * WIKIHOUSE_SHEET_MARGI
   	  return [
   	  sheet_height.to_mm,
   	  sheet_width.to_mm,
-  	  sheet_inner_height.
-  	  to_mm,
+  	  sheet_inner_height.to_mm,
   	  sheet_inner_width.to_mm,
   	  margin.to_mm,
   	  padding.to_mm,
@@ -414,6 +416,7 @@ class WikiHouseSVG
     sheet_height, sheet_width, inner_height, inner_width, margin,padding,font_height,drill_width = layout.dimensions
     sheets = layout.sheets
     count = sheets.length
+    drill_width=1.mm if drill_width<1
 
     scaled_height = scale * sheet_height
     scaled_width = scale * sheet_width
@@ -444,7 +447,7 @@ class WikiHouseSVG
       base_x = scale * margin
       base_y = scale * ((s * (sheet_height + (12 * margin))) + (margin * 9))
 
-      #svg << "<rect x=\"#{base_x}\" y=\"#{base_y}\" width=\"#{scaled_width}\" height=\"#{scaled_height}\" fill=\"none\" stroke=\"rgb(210, 210, 210)\" stroke-width=\"1\" />"
+      svg << "<rect x=\"#{base_x}\" y=\"#{base_y}\" width=\"#{scaled_width}\" height=\"#{scaled_height}\" fill=\"none\" stroke=\"rgb(210, 210, 210)\" stroke-width=\"1\" />"
 
       base_x += scale * margin
       base_y += scale * margin
@@ -892,6 +895,8 @@ class WikiHousePanel
 
     # Initialise a variable to hold temporarily generated entities.
     to_delete = []
+    scale=WikiHouseExtension.settings["scale"]
+    scale=1 if scale==0
 
     # Create a new face with the vertices transformed if the transformed areas
     # do not match.
@@ -902,12 +907,15 @@ class WikiHousePanel
       norm=(face.normal).normalize
       plane = [face.outer_loop.vertices[0].position,norm]
       pts=offset(face.outer_loop)
-      pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
+      pts=pts.map{|v| Geom::Point3d.new( v[0]*scale, v[1]*scale , v[2]*scale ).project_to_plane( plane ) }
+      puts "#{labels[0]}"
+      pts=check_duplicate( pts )
       tface = group.add_face(pts.map {|v| transform * v })
       face.loops.each do |loop|
         if not loop.outer?
           pts=offset(loop)
-          pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
+          pts=pts.map{|v| Geom::Point3d.new( v[0]*scale, v[1]*scale, v[2]*scale ).project_to_plane( plane ) }
+          pts=check_duplicate( pts )
           hole = group.add_face(pts.map {|v| transform * v })
           hole.erase! if hole.valid?
         end
@@ -1262,13 +1270,14 @@ class WikiHousePanel
   # Copyright 2004,2005,2006,2009 by Rick Wilson - All Rights Reserved
   # ------------------------------------------------------------------------------
   def offset( loop )
+    verts=loop.vertices;pts = [];vecs = []
+    return verts.map {|v| v.position } if WikiHouseExtension.settings["drill_width"]== 0
      if loop.outer?
          dist=(WikiHouseExtension.settings["drill_width"]/2)
      else
          dist=-(WikiHouseExtension.settings["drill_width"]/2)
      end
      #puts "drill_width: #{WikiHouseExtension.settings["drill_width"]}"
-	 verts=loop.vertices;pts = [];vecs = []
 	 # CREATE ARRAY pts OF OFFSET POINTS FROM FACE
 	 #puts "verts.length: #{verts.length}\n"
 	 0.upto(verts.length-1) do |a|
@@ -1314,7 +1323,22 @@ class WikiHousePanel
 				(pts.length > 2) ? (pts.push pts[0];return pts) : (return nil)
   end
   
-end
+  def check_duplicate( pts )
+  			 # CHECK FOR DUPLICATE POINTS IN pts ARRAY
+			 duplicates = []
+			 pts.each_index do |a|
+				 pts.each_index do |b|
+						next if b==a
+						duplicates << b if pts[a]===pts[b]
+				 end
+					break if a==pts.length-1
+			 end
+			 duplicates.reverse.each{|a| pts.delete(pts[a])}
+				# CREATE CURVE FROM POINTS IN pts ARRAY
+				#puts "pts: #{pts}\n"
+				(pts.length > 2) ? (pts.push pts[0];return pts) : (return nil)
+ end
+end #Class
 
 # ------------------------------------------------------------------------------
 # Entities Loader
@@ -1748,6 +1772,7 @@ def self.make_wikihouse(model, interactive)
       msg += "    #{count} in #{group.name.length > 0 and group.name or 'Group#???'}\n"
     end
     UI.messagebox msg
+    puts msg
   end
 
   # Filter out any panels which raised an error.
@@ -2542,7 +2567,7 @@ end
 # round_a
 # ------------------------------------------------------------------------------
 def  round_a( array )
-	return array.map{|v| (v+0.05.mm).round(1)}
+	return array.map{|v| (v).round(4)}
 end
 
 # ------------------------------------------------------------------------------
@@ -2881,6 +2906,8 @@ class WikiHouseMetrics
     	face.outer_loop.edgeuses.each  {|edgeuse|  len = len + edgeuse.edge.length }
     	data["length"]=((len/1000).to_mm).round(1)
     	data["path"]=@pathes[group]
+    	data["material"]=' '
+    	data["material"]=group.material.name if not group.material.nil?
     	#puts "data: #{(data)}"
     	data_all << data
     end
@@ -2966,8 +2993,8 @@ def self.load_wikihouse_metrics
   volume_tot=0
   length_tot=0
   # Save the TXT data to the file.
-  txt="Name\tSurface(m2)\tVolume(m3)\tLength(m)\tPath\n"
-  txt << "--------------------------------------------------------------\n"
+  txt="Name\tSurface(m2)\tVolume(m3)\tLength(m)\tPath\tMaterial\n"
+  txt << "-----------------------------------------------------------------------------------\n"
   #puts "data_all: #{(data_all)}"
   data_all.each do |data|
       name=data["name"]
@@ -2975,12 +3002,13 @@ def self.load_wikihouse_metrics
       volume=data["volume"]
       length=data["length"]
       path=data["path"]
+      material=data["material"]
       surface_tot = surface_tot +surface
       volume_tot = volume_tot + volume
       length_tot = length_tot + length
-      txt << "#{name}\t#{surface}\t#{volume}\t#{length}\t#{path}\n"
+      txt << "#{name}\t#{surface}\t#{volume}\t#{length}\t#{path}\t#{material}\n"
   end
-  txt << "--------------------------------------------------------------\n"
+  txt << "-----------------------------------------------------------------------------------\n"
   txt << "TOTALS\t#{surface_tot.round(2)}\t#{volume_tot.round(3)}\t#{length_tot.round(1)}\n"
   
   File.open(txt_filename, "wb") do |io|
@@ -3258,7 +3286,7 @@ def self.Select( name )
       entities = selection
     end
     @faces = Hash.new
-     @pathes = Hash.new
+    @pathes = Hash.new
     @groups = groups = Hash.new
     @orphans = orphans = Hash.new
     @root = model
@@ -3298,10 +3326,19 @@ def self.Select( name )
     model.selection.clear
     @faces.each_pair do |group,face|
       layer=group.layer
-      if ( not group.name.nil? ) and ( group.name == name )
-        puts "Layer: #{group.layer.name} - #{@pathes[group]}\n"
-        group.visible=true
-        model.selection.add group
+      case group.typename
+        when "Group"
+          if (not group.name.nil?) and (group.name == name)
+             puts "Layer: #{group.layer.name} - #{@pathes[group]}\n"
+             group.visible=true
+             model.selection.add group
+          end
+        when "ComponentInstance"
+          if ((not group.definition.name.nil?) and (group.definition.name == name))or((not group.name.nil?) and (group.name == name))
+             puts "Layer: #{group.layer.name} - #{@pathes[group]}\n"
+             group.visible=true
+             model.selection.add group
+          end
       end                       
     end
     return
