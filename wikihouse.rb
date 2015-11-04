@@ -8,6 +8,7 @@
 require 'sketchup.rb'
 require File.join('wikihouse', 'JSON.rb')
 require File.join('wikihouse', 'WebDialog.rb')
+require File.join('wikihouse', 'hershey.rb')
 module WikiHouseExtension
 # ------------------------------------------------------------------------------
 # Path Utilities
@@ -67,7 +68,7 @@ WIKIHOUSE_SHORT_CIRCUIT = false
 
 WEBDIALOG_PATH=File.join File.dirname(__FILE__), "wikihouse/webdialog"
 
-WIKIHOUSE_PLUGIN_VERSION = "0.2"
+WIKIHOUSE_PLUGIN_VERSION = "0.21"
 WIKIHOUSE_SPEC = "0.1"
 WIKIHOUSE_TEMP = get_temp_directory
 WIKIHOUSE_TITLE = "WikiHouse"
@@ -78,7 +79,7 @@ WIKIHOUSE_THICKNESS = 18.mm
 WIKIHOUSE_FONT_HEIGHT = 30.mm
 WIKIHOUSE_PANEL_PADDING = (25.0.mm / 2.0)
 WIKIHOUSE_SHEET_HEIGHT = 1200.mm
-WIKIHOUSE_SHEET_MARGIN = 15.0.mm - WIKIHOUSE_PANEL_PADDING
+WIKIHOUSE_SHEET_MARGIN = 17.5.mm - WIKIHOUSE_PANEL_PADDING
 WIKIHOUSE_SHEET_WIDTH = 2400.mm
 WIKIHOUSE_DRILL_WIDTH = 3.mm
 WIKIHOUSE_LAYOUT_SCALE = 1
@@ -409,14 +410,13 @@ class WikiHouseSVG
   end
 
   def generate
-
     layout = @layout
     scale = @scale
 
     sheet_height, sheet_width, inner_height, inner_width, margin,padding,font_height,drill_width = layout.dimensions
     sheets = layout.sheets
     count = sheets.length
-    drill_width=1.mm if drill_width<1
+    drill_width=0.04.mm.to_inch if drill_width==0
 
     scaled_height = scale * sheet_height
     scaled_width = scale * sheet_width
@@ -460,9 +460,11 @@ class WikiHouseSVG
         svg << '<g fill="none" stroke="rgb(255, 255, 255)" stroke-width="#{drill_width}" >'
         
         if label and label != ""
-          svg << <<-LABEL.gsub(/^ {12}/, '')
-            <text x="#{(scale * centroid.x) + base_x}" y="#{(scale * centroid.y) + base_y}" style="font-size: #{font_height}; stroke: none; fill: rgb(255, 0, 0); text-family: monospace">#{label}</text>
-            LABEL
+          #svg << <<-LABEL.gsub(/^ {12}/, '')
+            #<text x="#{(scale * centroid.x) + base_x}" y="#{(scale * centroid.y) + base_y}" style="font-size: #{font_height}; stroke: none; fill: rgb(255, 0, 0); text-family: monospace">#{label}</text>
+            #LABEL
+            word=Hershey::Word.new(label, font: :futural )
+            svg<< word.to_path(font_height/30,(scale * centroid.x) + base_x,(scale * centroid.y) + base_y)
         end
         
         for i in 0...loops.length
@@ -1271,7 +1273,7 @@ class WikiHousePanel
   # ------------------------------------------------------------------------------
   def offset( loop )
     verts=loop.vertices;pts = [];vecs = []
-    return verts.map {|v| v.position } if WikiHouseExtension.settings["drill_width"]== 0
+    #return verts.map {|v| v.position } if WikiHouseExtension.settings["drill_width"]== 0
      if loop.outer?
          dist=(WikiHouseExtension.settings["drill_width"]/2)
      else
@@ -1308,35 +1310,28 @@ class WikiHousePanel
 						puts "#{a} - vec3 is invalid"
 				 end
 			 end
-			 # CHECK FOR DUPLICATE POINTS IN pts ARRAY
-			 duplicates = []
-			 pts.each_index do |a|
-				 pts.each_index do |b|
-						next if b==a
-						duplicates << b if pts[a]===pts[b]
-				 end
-					break if a==pts.length-1
-			 end
-			 duplicates.reverse.each{|a| pts.delete(pts[a])}
-				# CREATE CURVE FROM POINTS IN pts ARRAY
-				#puts "pts: #{pts}\n"
-				(pts.length > 2) ? (pts.push pts[0];return pts) : (return nil)
+  (pts.length > 2) ? (return pts) : (return nil)
   end
   
   def check_duplicate( pts )
   			 # CHECK FOR DUPLICATE POINTS IN pts ARRAY
 			 duplicates = []
+			 loop=0
 			 pts.each_index do |a|
 				 pts.each_index do |b|
 						next if b==a
-						duplicates << b if pts[a]===pts[b]
+						if pts[a]===pts[b] and loop > 0
+						  duplicates << b
+						else
+						 loop=loop+1
+						end
 				 end
 					break if a==pts.length-1
 			 end
 			 duplicates.reverse.each{|a| pts.delete(pts[a])}
 				# CREATE CURVE FROM POINTS IN pts ARRAY
 				#puts "pts: #{pts}\n"
-				(pts.length > 2) ? (pts.push pts[0];return pts) : (return nil)
+				(pts.length > 2) ? (pts.push pts[0] if loop = 0;return pts) : (return nil)
  end
 end #Class
 

@@ -41,7 +41,7 @@ function recieve_wikihouse_settings(args) {
 	  document.getElementById("margin").value = Math.round(settings.margin*10)/10;
 	  document.getElementById("padding").value = Math.round(settings.padding*10)/10;
 	  document.getElementById("font_height").value = Math.round(settings.font_height*10)/10;
-	  document.getElementById("drill_width").value = Math.round(settings.drill_width*10)/10;
+	  document.getElementById("drill_width").value = Math.round(settings.drill_width*100)/100;
 	  document.getElementById("scale").value = Math.round(settings.scale*10000)/10000;
 	}
 
