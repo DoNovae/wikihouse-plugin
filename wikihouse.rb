@@ -79,7 +79,7 @@ WIKIHOUSE_THICKNESS = 18.mm
 WIKIHOUSE_FONT_HEIGHT = 30.mm
 WIKIHOUSE_PANEL_PADDING = (25.0.mm / 2.0)
 WIKIHOUSE_SHEET_HEIGHT = 1200.mm
-WIKIHOUSE_SHEET_MARGIN = 17.5.mm - WIKIHOUSE_PANEL_PADDING
+WIKIHOUSE_SHEET_MARGIN = 37.5.mm - WIKIHOUSE_PANEL_PADDING
 WIKIHOUSE_SHEET_WIDTH = 2400.mm
 WIKIHOUSE_DRILL_WIDTH = 3.mm
 WIKIHOUSE_LAYOUT_SCALE = 1
@@ -416,7 +416,7 @@ class WikiHouseSVG
     sheet_height, sheet_width, inner_height, inner_width, margin,padding,font_height,drill_width = layout.dimensions
     sheets = layout.sheets
     count = sheets.length
-    drill_width=0.04.mm.to_inch if drill_width==0
+    drill_width=0.5.mm.to_inch if drill_width==0
 
     scaled_height = scale * sheet_height
     scaled_width = scale * sheet_width
@@ -434,9 +434,6 @@ class WikiHouseSVG
            xmlns:xlink="http://www.w3.org/1999/xlink" style="background-color: #ffffff;">
       <desc>#{WIKIHOUSE_TITLE} Cutting Sheets</desc>"
       <!-- linkstart -->
-      <g visibility="hidden" pointer-events="all">
-        <rect x="0" y="0" width="100%" height="100%" fill="none" />
-      </g>
       HEADER
 
     loop_count = 0
@@ -447,8 +444,9 @@ class WikiHouseSVG
       base_x = scale * margin
       base_y = scale * ((s * (sheet_height + (12 * margin))) + (margin * 9))
 
-      svg << "<rect x=\"#{base_x}\" y=\"#{base_y}\" width=\"#{scaled_width}\" height=\"#{scaled_height}\" fill=\"none\" stroke=\"rgb(210, 210, 210)\" stroke-width=\"1\" />"
+      #svg << "<rect x=\"#{base_x}\" y=\"#{base_y}\" width=\"#{scaled_width}\" height=\"#{scaled_height}\" fill=\"none\" stroke=\"rgb(210, 210, 210)\" stroke-width=\"1\" />"
 
+      svg << "<path style=\"fill:none;stroke:#d2d2d2;stroke-width:1\" d=\"m #{base_x},#{base_y} #{scaled_width},0 0,#{scaled_height} #{-scaled_width} ,0 z\" />"
       base_x += scale * margin
       base_y += scale * margin
 
@@ -457,29 +455,24 @@ class WikiHouseSVG
         Sketchup.set_status_text WIKIHOUSE_SVG_STATUS[(loop_count/5) % 5]
         loop_count += 1
 
-        svg << '<g fill="none" stroke="rgb(255, 255, 255)" stroke-width="#{drill_width}" >'
+        svg << "<g fill=\"none\" stroke=\"rgb(0, 0, 0)\" stroke-width=\"#{drill_width}\" >"
         
         if label and label != ""
           #svg << <<-LABEL.gsub(/^ {12}/, '')
             #<text x="#{(scale * centroid.x) + base_x}" y="#{(scale * centroid.y) + base_y}" style="font-size: #{font_height}; stroke: none; fill: rgb(255, 0, 0); text-family: monospace">#{label}</text>
             #LABEL
             word=Hershey::Word.new(label, font: :futural )
-            svg<< word.to_path(font_height/30,(scale * centroid.x) + base_x,(scale * centroid.y) + base_y)
+            offset=label.length*4/2
+            svg<< word.to_path(font_height/30,(scale * centroid.x-offset) + base_x,(scale * centroid.y) + base_y)
         end
         
         for i in 0...loops.length
-          circle = circles[i]
-          if circle
-            center, radius = circle
-            x = (scale * center.x) + base_x
-            y = (scale * center.y) + base_y
-            radius = scale * radius
-            svg << <<-CIRCLE.gsub(/^ {14}/, '')
-              <circle cx="#{x}mm" cy="#{y}mm" r="#{radius}"
-                      stroke="rgb(51, 51, 51)" stroke-width="#{drill_width}" fill="none"  />
-              CIRCLE
-          else
             loop = loops[i]
+            if i == loops.length-1
+               color="rgb(0, 0, 204)"
+            else
+               color="rgb(0, 153, 0)"
+            end
             first = loop.shift
             path = []
             path << "M #{(scale * first.x) + base_x} #{(scale * first.y) + base_y}"
@@ -488,10 +481,10 @@ class WikiHouseSVG
             end
             path << "Z"
             svg << <<-PATH.gsub(/^ {14}/, '')
-              <path d="#{path.join ' '}" stroke="rgb(0, 0, 0)" stroke-width="#{drill_width}" fill="none" />"
+              <path d="#{path.join ' '}" stroke="#{color}" stroke-width="#{drill_width}" fill="none" />"
               PATH
           end
-        end
+
 
         svg << '</g>'
 
@@ -1273,7 +1266,7 @@ class WikiHousePanel
   # ------------------------------------------------------------------------------
   def offset( loop )
     verts=loop.vertices;pts = [];vecs = []
-    #return verts.map {|v| v.position } if WikiHouseExtension.settings["drill_width"]== 0
+    return verts.map {|v| v.position } if WikiHouseExtension.settings["drill_width"]== 0
      if loop.outer?
          dist=(WikiHouseExtension.settings["drill_width"]/2)
      else
@@ -1310,28 +1303,25 @@ class WikiHousePanel
 						puts "#{a} - vec3 is invalid"
 				 end
 			 end
-  (pts.length > 2) ? (return pts) : (return nil)
+  return pts
   end
   
   def check_duplicate( pts )
   			 # CHECK FOR DUPLICATE POINTS IN pts ARRAY
 			 duplicates = []
-			 loop=0
-			 pts.each_index do |a|
-				 pts.each_index do |b|
-						next if b==a
-						if pts[a]===pts[b] and loop > 0
-						  duplicates << b
-						else
-						 loop=loop+1
+			 for a in 0..pts.length-2
+						if pts[a]==pts[a+1]
+						  duplicates << a
+						  #puts "duplicates: #{a}\n"
 						end
-				 end
-					break if a==pts.length-1
 			 end
 			 duplicates.reverse.each{|a| pts.delete(pts[a])}
-				# CREATE CURVE FROM POINTS IN pts ARRAY
-				#puts "pts: #{pts}\n"
-				(pts.length > 2) ? (pts.push pts[0] if loop = 0;return pts) : (return nil)
+			 if pts[0]!=pts[pts.length-1]
+			    pts.push(pts[0])
+			 end
+			 # CREATE CURVE FROM POINTS IN pts ARRAY
+			 #puts "pts: #{pts}\n"
+			 (pts.length > 0) ? (return pts) : (return nil)
  end
 end #Class
 
@@ -1476,7 +1466,7 @@ def visit_faces(faces, transform)
       area1 = face1.area transform
       # Ignore small faces.
       if area1 < 5
-        next
+        #HBL next
       end
       idx = -1
       match = false
