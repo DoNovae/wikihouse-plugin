@@ -1137,7 +1137,7 @@ class WikiHousePanel
         height = max.y - min.y
         width = max.x - min.x
         if (width - panel_max_width) > 0.1
-          #HBL nextm
+          next
           next
         end
         if (height - panel_max_height) > 0.1
@@ -1465,8 +1465,9 @@ def visit_faces(faces, transform)
       face1 = faces.pop
       area1 = face1.area transform
       # Ignore small faces.
-      if area1 < 5
-        #HBL next
+      #HBL if area1 < 5
+      if area1 < 0.5
+        next
       end
       idx = -1
       match = false
@@ -2884,12 +2885,12 @@ class WikiHouseMetrics
         #puts "face: #{(face.typename)}"
         data=Hash.new
     	data["name"]=group.name
-    	data["surface"]=(face.area/1000/1000*(1).to_mm*(1).to_mm).round(2)
+    	data["surface"]=(face.area/1000/1000*(1).to_mm*(1).to_mm).round(3)
     	sheet_depth=WikiHouseExtension.settings["sheet_depth"].to_mm
-    	data["volume"]=(face.area/1000/1000/1000*sheet_depth*(1).to_mm*(1).to_mm).round(3)
+    	data["volume"]=(face.area/1000/1000/1000*sheet_depth*(1).to_mm*(1).to_mm).round(5)
     	len=0
     	face.outer_loop.edgeuses.each  {|edgeuse|  len = len + edgeuse.edge.length }
-    	data["length"]=((len/1000).to_mm).round(1)
+    	data["length"]=((len/1000).to_mm).round(2)
     	data["path"]=@pathes[group]
     	data["material"]=' '
     	data["material"]=group.material.name if not group.material.nil?
