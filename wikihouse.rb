@@ -40,6 +40,7 @@ end
 LAYER_INNER = "inner"
 LAYER_OUTER = "outer"
 LAYER0 = "Layer0"
+ACCESSORIES = "Accessories"
 PANEL_ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 PANEL_ID_ALPHABET_LENGTH = PANEL_ID_ALPHABET.length
 
@@ -83,6 +84,8 @@ WIKIHOUSE_SHEET_MARGIN = 37.5.mm - WIKIHOUSE_PANEL_PADDING
 WIKIHOUSE_SHEET_WIDTH = 2400.mm
 WIKIHOUSE_DRILL_WIDTH = 3.mm
 WIKIHOUSE_LAYOUT_SCALE = 1
+WIKIHOUSE_NOTCHES_DIV = 11
+WIKIHOUSE_NOTCHES_MIN = 20.mm
 
 WIKIHOUSE_SHEET_INNER_HEIGHT = WIKIHOUSE_SHEET_HEIGHT - (2 * WIKIHOUSE_SHEET_MARGIN)
 WIKIHOUSE_SHEET_INNER_WIDTH = WIKIHOUSE_SHEET_WIDTH - (2 * WIKIHOUSE_SHEET_MARGIN)
@@ -102,6 +105,8 @@ WIKIHOUSE_SHEET_INNER_WIDTH = WIKIHOUSE_SHEET_WIDTH - (2 * WIKIHOUSE_SHEET_MARGI
   wikihouse_sheet_inner_width  = WIKIHOUSE_SHEET_INNER_WIDTH
   wikihouse_drill_width = WIKIHOUSE_DRILL_WIDTH
   wikihouse_scale = WIKIHOUSE_LAYOUT_SCALE
+  notches_div=WIKIHOUSE_NOTCHES_DIV
+  notches_min=WIKIHOUSE_NOTCHES_MIN
   # Store the actual values as length objects (in inches)
   @settings = {
     'sheet_height'       => wikihouse_sheet_height.to_inch,
@@ -114,6 +119,8 @@ WIKIHOUSE_SHEET_INNER_WIDTH = WIKIHOUSE_SHEET_WIDTH - (2 * WIKIHOUSE_SHEET_MARGI
     'font_height'        => wikihouse_font_height.to_inch,
     'drill_width'        => wikihouse_drill_width.to_inch,
     'scale'              => wikihouse_scale,
+    'notches_div'        => notches_div,
+    'notches_min'        => notches_min,
   }
 
 
@@ -455,17 +462,18 @@ class WikiHouseSVG
         Sketchup.set_status_text WIKIHOUSE_SVG_STATUS[(loop_count/5) % 5]
         loop_count += 1
 
-        svg << "<g fill=\"none\" stroke=\"rgb(0, 0, 0)\" stroke-width=\"#{drill_width}\" >"
+        #svg << "<g fill=\"none\" stroke=\"rgb(0, 0, 0)\" stroke-width=\"#{drill_width}\" >"
         
         if label and label != ""
           #svg << <<-LABEL.gsub(/^ {12}/, '')
             #<text x="#{(scale * centroid.x) + base_x}" y="#{(scale * centroid.y) + base_y}" style="font-size: #{font_height}; stroke: none; fill: rgb(255, 0, 0); text-family: monospace">#{label}</text>
             #LABEL
             word=Hershey::Word.new(label, font: :futural )
-            offset=label.length*4/2
-            svg<< word.to_path(font_height/30,(scale * centroid.x-offset) + base_x,(scale * centroid.y) + base_y)
+            #offset=label.length*4/2
+            offset=label.length*font_height/30/2
+            svg<< word.to_path(font_height/30,(scale * (centroid.x-offset)) + base_x,(scale * centroid.y) + base_y)
         end
-        
+         svg << "<g fill=\"none\" stroke=\"rgb(0, 0, 0)\" stroke-width=\"#{drill_width}\" >"
         for i in 0...loops.length
             loop = loops[i]
             if i == loops.length-1
@@ -892,23 +900,22 @@ class WikiHousePanel
     to_delete = []
     scale=WikiHouseExtension.settings["scale"]
     scale=1 if scale==0
-
+    
     # Create a new face with the vertices transformed if the transformed areas
     # do not match.
-    #if (face.area - face.area(transform)).abs > 0.1
       group_entity = root.add_group
       to_delete << group_entity
       group = group_entity.entities
       norm=(face.normal).normalize
       plane = [face.outer_loop.vertices[0].position,norm]
-      pts=offset(face.outer_loop)
-      pts=pts.map{|v| Geom::Point3d.new( v[0]*scale, v[1]*scale , v[2]*scale ).project_to_plane( plane ) }
       puts "#{labels[0]}"
+      pts=offset(face.outer_loop , WikiHouseExtension.settings["drill_width"]/2 , norm )
+      pts=pts.map{|v| Geom::Point3d.new( v[0]*scale, v[1]*scale , v[2]*scale ).project_to_plane( plane ) }
       pts=check_duplicate( pts )
       tface = group.add_face(pts.map {|v| transform * v })
       face.loops.each do |loop|
         if not loop.outer?
-          pts=offset(loop)
+          pts=offset(loop , WikiHouseExtension.settings["drill_width"]/2 , norm )
           pts=pts.map{|v| Geom::Point3d.new( v[0]*scale, v[1]*scale, v[2]*scale ).project_to_plane( plane ) }
           pts=check_duplicate( pts )
           hole = group.add_face(pts.map {|v| transform * v })
@@ -916,7 +923,6 @@ class WikiHousePanel
         end
       end
       face = tface
-    #end
 
     # Save the total surface area of the face.
     total_area = face.area
@@ -1261,48 +1267,47 @@ class WikiHousePanel
   # ------------------------------------------------------------------------------
   # offset
   # ------------------------------------------------------------------------------
-  # Inspired from offset.rb
-  # Copyright 2004,2005,2006,2009 by Rick Wilson - All Rights Reserved
-  # ------------------------------------------------------------------------------
-  def offset( loop )
-    verts=loop.vertices;pts = [];vecs = []
-    return verts.map {|v| v.position } if WikiHouseExtension.settings["drill_width"]== 0
-     if loop.outer?
-         dist=(WikiHouseExtension.settings["drill_width"]/2)
-     else
-         dist=-(WikiHouseExtension.settings["drill_width"]/2)
-     end
-     #puts "drill_width: #{WikiHouseExtension.settings["drill_width"]}"
-	 # CREATE ARRAY pts OF OFFSET POINTS FROM FACE
-	 #puts "verts.length: #{verts.length}\n"
+  def offset( loop , dist , norm )
+    verts=loop.vertices
+    pts = []
+    vecs = []
+    dist_in=dist.to_inch()
+    #puts "-----------------------------------"
+    return verts.map {|v| v.position } if dist== 0
 	 0.upto(verts.length-1) do |a|
-			 vec1 = (verts[a].position-verts[a-(verts.length-1)].position).normalize
-			 vec2 = (verts[a].position-verts[a-1].position).normalize
-			 next if vec2.parallel?(vec1) 
-			 vec3 = (vec1+vec2).normalize
-			 #puts "vec3: #{vec3}\n"al
-			 if vec3.valid?
-				 ang = vec1.angle_between(vec2)/2
-				 ang = Math::PI/2 if vec1.parallel?(vec2)
-				 vec3.length = dist/Math::sin(ang)
-				 vecs << vec3
-				 t = Geom::Transformation.new(vec3)
-				 if pts.length > 0
-					 vec4 = pts.last.vector_to(verts[a].position.transform(t))
-					 if vec4.valid?
-							 unless (vec2.parallel?(vec4))
-									t = Geom::Transformation.new(vec3.reverse)
-									#puts "vec3b: #{vec3} "
-							 end
-					 end
-				 end
-						#puts "vec3: #{vec3} "
-						vert=verts[a].position.transform(t)
-						pts.push(vert.to_a)
-				 else
-						puts "#{a} - vec3 is invalid"
-				 end
+			 edge1=verts[(a-1).modulo(verts.length)].common_edge verts[a]
+			 edge2=verts[a].common_edge verts[(a-(verts.length-1)).modulo(verts.length)]
+			 if edge1.faces.length != 2 or edge2.faces.length != 2
+			   puts "edge.faces: #{edge1.faces.length}, #{edge2.faces.length}"
+			   next
 			 end
+			 if (norm.dot(edge1.faces[0].normal)).abs < 0.1
+			   norm1=edge1.faces[0].normal
+			 else
+			   norm1=edge1.faces[1].normal
+			 end
+			 norm1.length = dist_in
+			 #norm1.reverse!
+			 if (norm.dot(edge2.faces[0].normal)).abs < 0.1
+			   norm2=edge2.faces[0].normal
+			 else
+			   norm2=edge2.faces[1].normal
+			 end
+			 norm2.length = dist_in
+			 #norm2.reverse!
+			 #puts "norm1, norm2: #{norm1.length}, #{norm2.length}"
+			 vec3=norm1+norm2
+			 angle=norm1.angle_between vec3
+			 vec3.length = dist_in/Math.cos(angle)
+			 #puts "vec3.length: #{vec3.length}"
+			 #puts "angle: #{angle*180/Math::PI}"
+			 #vert=verts[a].position.transform(Geom::Transformation.new(norm1))
+			 #pts.push(vert.to_a)
+			 vert=verts[a].position.transform(Geom::Transformation.new(vec3))
+			 pts.push(vert.to_a)
+			 #vert=verts[a].position.transform(Geom::Transformation.new(norm2))
+			 #pts.push(vert.to_a)
+	 end
   return pts
   end
   
@@ -1333,7 +1338,7 @@ class WikiHouseEntities
 
   attr_accessor :orphans, :panels
 
-  def initialize(entities, root, dimensions)
+  def initialize(model,entities, root, dimensions)
 
     $count_s1 = 0
     $count_s2 = 0
@@ -1363,7 +1368,7 @@ class WikiHouseEntities
       entity, transform = todo.pop
       case entity.typename
       when "Group", "ComponentInstance"
-        visit entity, transform
+        visit( model, entity, transform )
       when "Face"
         if orphans[WIKIHOUSE_DUMMY_GROUP]
           orphans[WIKIHOUSE_DUMMY_GROUP] += 1
@@ -1609,17 +1614,21 @@ def visit_faces(faces, transform)
 
   end
   
-def visit(group, transform)
+def visit(model,group, transform)
 
     # Setup some local variables.
     exists = false
     faces = []
     groups = @groups
+    layers = model.layers
+    ly_accies = layers.add ACCESSORIES
 
     # Setup the min/max heights for the depth edge/faces.
     min_height =  WikiHouseExtension.settings["sheet_depth"]-1.mm
     max_height =  WikiHouseExtension.settings["sheet_depth"]+1.mm
-
+    
+    return if group.layer==ly_accies or group.hidden?
+    
     # Apply the transformation if one has been set for this group.
     if group.transformation
       transform = transform * group.transformation
@@ -1645,7 +1654,7 @@ def visit(group, transform)
         entities.each do |entity|
           case entity.typename
           when "Group", "ComponentInstance"
-            @todo << [entity, transform]
+            @todo << [entity, transform] if group.layer!=ly_accies and not group.hidden? and group.layer.visible?
           end
         end
         return
@@ -1657,6 +1666,7 @@ def visit(group, transform)
 
     # Loop through the entities.
     entities.each do |entity|
+     next if entity.hidden?
       case entity.typename
       when "Face"
         edges = entity.edges
@@ -1746,7 +1756,7 @@ def self.make_wikihouse(model, interactive)
   if WIKIHOUSE_SHORT_CIRCUIT and $wikloader
     loader = $wikloader
   else
-    loader = WikiHouseEntities.new entities, root, dimensions
+    loader = WikiHouseEntities.new model, entities, root, dimensions
     if WIKIHOUSE_SHORT_CIRCUIT
       $wikloader = loader
     end
@@ -1882,6 +1892,8 @@ def self.visit_entities(model,group, transform , groups, todo, faces , pathes , 
     exists = false
     fs = []
     vfaces = []
+    layers = model.layers
+    ly_accies = layers.add ACCESSORIES
 
     # Setup the min/max heights for the depth edge/faces.
     min_height = WikiHouseExtension.settings["sheet_depth"]-1.mm
@@ -1889,6 +1901,8 @@ def self.visit_entities(model,group, transform , groups, todo, faces , pathes , 
 
     # Get the label.
     label="None"
+    
+    return if group.layer==ly_accies or group.hidden?
     
     if group.transformation
            transform = transform * group.transformation
@@ -1904,6 +1918,7 @@ def self.visit_entities(model,group, transform , groups, todo, faces , pathes , 
       entities = group.definition.entities
       label = group.name if not group.name.nil?
     end
+    
 
     # Add the new group/component definition.
     pathes[group]=label if pathes[group].nil?
@@ -1911,6 +1926,7 @@ def self.visit_entities(model,group, transform , groups, todo, faces , pathes , 
 
     # Loop through the entities.
     entities.each do |entity|
+      next if entity.hidden?
       case entity.typename
       when "Face"
       	# List vertical faces
@@ -1950,7 +1966,6 @@ def self.visit_entities(model,group, transform , groups, todo, faces , pathes , 
       faces[group] = fs
   end
 end
-
 
 
 # ------------------------------------------------------------------------------
@@ -2054,25 +2069,19 @@ def union( model )
     
     @faces.each_pair do |group,faces|
       transform=group.transformation
-       #loop0=faces0[0].outer_loop
-       #loop0.edges.map{|edge| edge.visible=true}
-       #plane = [transform0*loop0.vertices[0].position,ref_normal]
        faces.each do |face|
           ofaces0=[]
           ifaces0=[]
           # Select only uper faces
           norm=(transform*face.normal).normalize
           if (ref_normal.dot norm ) > 0.5
-            #loop=face.outer_loop
-            #loop.edges.map{|edge| edge.visible=true}
-            #plane = [transform*loop.vertices[0].position,norm]
             face.loops.each do |loop|  
               if not loop.outer?
                 pts=loop.vertices.map {|v| transform * v.position }
                 pts=pts.map{|v| [v.x=(v.x).round(4),v.y=(v.y).round(4),v.z=(v.z).round(4)]}
                 pts.uniq!
                 if pts.length > 2
-                  pts<<pts[0]
+                  pts << pts[0]
                   pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
                   #puts "pts: #{pts}"
                   newf=gp_entities.add_face(pts)
@@ -2086,7 +2095,7 @@ def union( model )
              pts=pts.map{|v| [v.x=(v.x).round(4),v.y=(v.y).round(4),v.z=(v.z).round(4)]}
              pts.uniq!
              if pts.length > 2
-               pts<<pts[0]
+               pts << pts[0]
                #puts "pts: #{pts}"
                pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ) }
                pts=pts.map{|v| Geom::Point3d.new( v[0], v[1] , v[2] ).project_to_plane( plane ) }
@@ -3253,6 +3262,9 @@ def self.load_wikihouse_unique
 end
 
 
+
+
+
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 # Select
@@ -3449,6 +3461,9 @@ if not file_loaded? __FILE__
   }
   
 # ------------------------------------------------------------------------------
+
+
+
 
 
   WIKIHOUSE_SETTINGS = UI::Command.new 'Settings...' do

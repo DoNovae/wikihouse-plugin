@@ -30,6 +30,8 @@ function recieve_wikihouse_settings(args) {
 	  "font_height"         => wikihouse_font_height,
 	  "drill_width"         => wikihouse_drill_width,
 	  "scale"               => wikihouse_scale,
+	  "notches_div"         => notches_div,
+	  "notches_min"         => notches_min,
 	  }
 	  */
 
@@ -43,6 +45,8 @@ function recieve_wikihouse_settings(args) {
 	  document.getElementById("font_height").value = Math.round(settings.font_height*10)/10;
 	  document.getElementById("drill_width").value = Math.round(settings.drill_width*100)/100;
 	  document.getElementById("scale").value = Math.round(settings.scale*10000)/10000;
+	  document.getElementById("notches_div").value = Math.round(settings.notches_div);
+	  document.getElementById("notches_min").value = Math.round(settings.notches_min*10000)/10000;
 	}
 
 // Update Settings 
@@ -50,7 +54,7 @@ function send_wikihouse_settings(mode) {
   
 	
   var fields = new Array("sheet_height", "sheet_width", "sheet_depth", 
-		  "margin", "padding", "font_height" , "drill_width" , "scale");
+		  "margin", "padding", "font_height" , "drill_width" , "scale","notches_div","notches_min");
   
   var idx, value, args;  
 

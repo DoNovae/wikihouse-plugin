@@ -26,7 +26,7 @@ module WikiHouseExtension
         # Convert Dimenstions to mm
         dims = {}
         for k, v in settings do
-          if k=="scale"
+          if k=="scale" or k=="notches_div"
             dims[k] = v
           else
             dims[k] = v.to_mm
@@ -54,7 +54,7 @@ module WikiHouseExtension
       for k,v in new_settings do
         # Convert mm back to inches
         #puts "settings[k]: #{v.mm}"
-         if k=="scale"
+         if k=="scale" or k=="notches_div"
             settings[k] = v
           else
             settings[k] = (v.mm).to_inch
@@ -65,6 +65,7 @@ module WikiHouseExtension
       # Recalculate inner heights and widths
       settings["sheet_inner_height"] = settings["sheet_height"] - (2 * settings["margin"])
       settings["sheet_inner_width"] = settings["sheet_width"] - (2 * settings["margin"])
+      settings["notches_div"]=(settings["notches_div"]/2).round(0)*2+1
 
       puts "Dimensions Updated!"
 
